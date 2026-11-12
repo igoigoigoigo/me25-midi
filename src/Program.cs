@@ -186,6 +186,7 @@ namespace ME25Midi
     {
         public string Output = "*virtual*";
         public int Channel = 1, CcDown = 20, CcUp = 21, CcSolo = 22;
+        public int SoloMode = 1; // 0 = interruptor (127 liga / 0 desliga), 1 = toque (127 -> 0 a cada pisada)
         public bool ProgramChange = false, StartMinimized = false;
         static string FilePath { get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ME25MIDI", "settings.ini"); } }
 
@@ -204,6 +205,7 @@ namespace ME25Midi
                     else if (k == "CcDown" && int.TryParse(v, out n)) s.CcDown = n;
                     else if (k == "CcUp" && int.TryParse(v, out n)) s.CcUp = n;
                     else if (k == "CcSolo" && int.TryParse(v, out n)) s.CcSolo = n;
+                    else if (k == "SoloMode" && int.TryParse(v, out n)) s.SoloMode = n == 0 ? 0 : 1;
                     else if (k == "ProgramChange") s.ProgramChange = v == "1";
                     else if (k == "StartMinimized") s.StartMinimized = v == "1";
                 }
@@ -217,7 +219,7 @@ namespace ME25Midi
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(FilePath));
                 File.WriteAllLines(FilePath, new[] {
-                    "Output=" + Output, "Channel=" + Channel, "CcDown=" + CcDown, "CcUp=" + CcUp, "CcSolo=" + CcSolo,
+                    "Output=" + Output, "Channel=" + Channel, "CcDown=" + CcDown, "CcUp=" + CcUp, "CcSolo=" + CcSolo, "SoloMode=" + SoloMode,
                     "ProgramChange=" + (ProgramChange ? "1" : "0"), "StartMinimized=" + (StartMinimized ? "1" : "0") });
             }
             catch { }
@@ -293,7 +295,12 @@ namespace ME25Midi
                         else if (so != solo)
                         {
                             solo = so;
-                            Out(new byte[] { (byte)(0xB0 + ch), (byte)s.CcSolo, (byte)(so ? 127 : 0) });
+                            if (s.SoloMode == 1)
+                            {   // toque: cada pisada = 127 e depois 0 (para mapeamentos "toggle" que alternam a cada 127)
+                                Out(new byte[] { (byte)(0xB0 + ch), (byte)s.CcSolo, 127 });
+                                Out(new byte[] { (byte)(0xB0 + ch), (byte)s.CcSolo, 0 });
+                            }
+                            else Out(new byte[] { (byte)(0xB0 + ch), (byte)s.CcSolo, (byte)(so ? 127 : 0) });
                             Notify(Ev.Solo, so ? "1" : "0", s.CcSolo);
                         }
                         Sleep(40);
@@ -328,7 +335,7 @@ namespace ME25Midi
 
         Label lblStatus, lblOut;
         Panel ledDown, ledUp, ledSolo;
-        ComboBox cmbOut; NumericUpDown numCh, numDown, numUp, numSolo;
+        ComboBox cmbOut, cmbSoloMode; NumericUpDown numCh, numDown, numUp, numSolo;
         CheckBox chkPC, chkMin; ListBox log;
         NotifyIcon tray;
         System.Windows.Forms.Timer flashTimer;
@@ -340,7 +347,7 @@ namespace ME25Midi
         public MainForm()
         {
             Text = "ME-25 MIDI"; FormBorderStyle = FormBorderStyle.FixedSingle; MaximizeBox = false;
-            ClientSize = new Size(460, 440); BackColor = Bg; ForeColor = Fg; Font = new Font("Segoe UI", 9f);
+            ClientSize = new Size(460, 466); BackColor = Bg; ForeColor = Fg; Font = new Font("Segoe UI", 9f);
             Icon appIcon = SystemIcons.Application;
             try { appIcon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
             Icon = appIcon;
@@ -350,7 +357,7 @@ namespace ME25Midi
 
             ledDown = Led("MEMORY ▼", 16); ledUp = Led("MEMORY ▲", 166); ledSolo = Led("SOLO", 316);
 
-            GroupBox g = new GroupBox { Left = 16, Top = 112, Width = 428, Height = 170, Text = "Saída MIDI", ForeColor = Fg };
+            GroupBox g = new GroupBox { Left = 16, Top = 112, Width = 428, Height = 196, Text = "Saída MIDI", ForeColor = Fg };
             Controls.Add(g);
             g.Controls.Add(new Label { Left = 12, Top = 26, Width = 60, Text = "Porta:" });
             cmbOut = new ComboBox { Left = 80, Top = 22, Width = 260, DropDownStyle = ComboBoxStyle.DropDownList };
@@ -364,14 +371,20 @@ namespace ME25Midi
             numUp = Num(g, "CC ▲", 290, 78, 0, 127, settings.CcUp);
             numSolo = Num(g, "CC SOLO", 12, 108, 0, 127, settings.CcSolo);
             chkPC = new CheckBox { Left = 150, Top = 108, Width = 260, Text = "Enviar também Program Change", Checked = settings.ProgramChange };
-            chkMin = new CheckBox { Left = 150, Top = 136, Width = 260, Text = "Iniciar minimizado na bandeja", Checked = settings.StartMinimized };
-            g.Controls.AddRange(new Control[] { chkPC, chkMin });
+            g.Controls.Add(new Label { Left = 12, Top = 141, Width = 70, Text = "Modo SOLO" });
+            cmbSoloMode = new ComboBox { Left = 86, Top = 137, Width = 326, DropDownStyle = ComboBoxStyle.DropDownList };
+            cmbSoloMode.Items.Add("Interruptor: 127 liga / 0 desliga");
+            cmbSoloMode.Items.Add("Toque: 127 → 0 a cada pisada (alterna no plugin)");
+            cmbSoloMode.SelectedIndex = settings.SoloMode == 0 ? 0 : 1;
+            chkMin = new CheckBox { Left = 12, Top = 168, Width = 260, Text = "Iniciar minimizado na bandeja", Checked = settings.StartMinimized };
+            g.Controls.AddRange(new Control[] { chkPC, cmbSoloMode, chkMin });
             EventHandler save = (o, e) => SaveSettings();
+            cmbSoloMode.SelectedIndexChanged += save;
             numCh.ValueChanged += save; numDown.ValueChanged += save; numUp.ValueChanged += save; numSolo.ValueChanged += save;
             chkPC.CheckedChanged += save; chkMin.CheckedChanged += save;
             cmbOut.SelectedIndexChanged += (o, e) => { if (!loading) { SaveSettings(); OpenOutput(); } };
 
-            log = new ListBox { Left = 16, Top = 294, Width = 428, Height = 134, BackColor = Color.FromArgb(20, 20, 24), ForeColor = Color.Silver, BorderStyle = BorderStyle.FixedSingle, IntegralHeight = false };
+            log = new ListBox { Left = 16, Top = 320, Width = 428, Height = 134, BackColor = Color.FromArgb(20, 20, 24), ForeColor = Color.Silver, BorderStyle = BorderStyle.FixedSingle, IntegralHeight = false };
             Controls.Add(log);
 
             tray = new NotifyIcon { Icon = appIcon, Text = "ME-25 MIDI", Visible = true };
@@ -460,7 +473,7 @@ namespace ME25Midi
             if (loading) return;
             PortItem it = cmbOut.SelectedItem as PortItem;
             if (it != null) settings.Output = it.Key;
-            settings.Channel = (int)numCh.Value; settings.CcDown = (int)numDown.Value; settings.CcUp = (int)numUp.Value; settings.CcSolo = (int)numSolo.Value;
+            settings.Channel = (int)numCh.Value; settings.CcDown = (int)numDown.Value; settings.CcUp = (int)numUp.Value; settings.CcSolo = (int)numSolo.Value; settings.SoloMode = cmbSoloMode.SelectedIndex == 0 ? 0 : 1;
             settings.ProgramChange = chkPC.Checked; settings.StartMinimized = chkMin.Checked;
             settings.Save();
         }
@@ -478,7 +491,7 @@ namespace ME25Midi
                 case Ev.Up: upUntil = DateTime.Now.AddMilliseconds(250); AddLog("MEMORY ▲  → " + s); break;
                 case Ev.Solo:
                     soloOn = s == "1";
-                    if (n >= 0) AddLog("SOLO " + (soloOn ? "ON " : "OFF") + " → CC" + n + " = " + (soloOn ? 127 : 0));
+                    if (n >= 0) AddLog("SOLO " + (soloOn ? "ON " : "OFF") + " → CC" + n + (settings.SoloMode == 1 ? " 127→0" : " = " + (soloOn ? 127 : 0)));
                     break;
                 case Ev.Log: AddLog(s); break;
             }

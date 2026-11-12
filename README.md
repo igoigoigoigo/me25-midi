@@ -9,10 +9,15 @@ para controlar DAWs e plugins (MIDI Learn) usando a própria pedaleira.
 |---|---|
 | **MEMORY ▼** (desce patch) | **CC 20** — 127 e logo depois 0 (toque) |
 | **MEMORY ▲** (sobe patch) | **CC 21** — 127 e logo depois 0 (toque) |
-| **SOLO** | **CC 22** — 127 liga / 0 desliga |
+| **SOLO** | **CC 22** — modo *Toque* (padrão): 127 → 0 a cada pisada · modo *Interruptor*: 127 liga / 0 desliga |
 | *(opcional)* | **Program Change** com o número do patch (0–59) |
 
 Canal e números de CC são configuráveis na janela.
+
+**Modo do SOLO:** plugins como os da Neural DSP, com o mapeamento em *toggle*, alternam a cada
+valor 127. No modo *Interruptor* isso exige duas pisadas por troca, porque o 0 é ignorado. Por isso
+o padrão é *Toque*. Use *Interruptor* com o "Link to controller" do FL Studio ou com parâmetros que
+seguem o valor (≥64 = ligado).
 
 ## Por que isso existe
 
